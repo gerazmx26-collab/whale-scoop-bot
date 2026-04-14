@@ -26,6 +26,7 @@ class Config:
     # Data sources
     sec_api_key: Optional[str] = None
     whale_alert_ws_url: str = "wss://api.whale-alert.io/v1/ws"
+    api_base_url: str = "http://localhost:8000"  # WhaleTracker backend
 
     # Execution
     poll_interval: int = 60  # seconds
