@@ -14,34 +14,44 @@ echo "--------------------------------------------------"
 # 1. Iniciar Backend (FastAPI)
 echo "🚀 Iniciando Backend (FastAPI)..."
 cd "$PROJECT_DIR"
-nohup uvicorn backend.main:app --port 8000 --log-level warning > /tmp/backend.log 2>&1 &
+nohup uvicorn backend.main:app --port 8000 --log-level error > /tmp/backend.log 2>&1 &
 BACKEND_PID=$!
+sleep 5
 
-# 2. Iniciar Frontend (Dashboard)
+# 2. Verificar que Backend esté listo
+echo "⌛ Verificando Backend..."
+until curl -s http://localhost:8000/health | grep -q "healthy"; do
+    sleep 2
+done
+
+# 3. Iniciar Frontend (Dashboard)
 echo "🎨 Iniciando Dashboard..."
 cd "$PROJECT_DIR/frontend"
-npm run dev -- -p 3001 &
+npm run dev -- -p 3001 > /tmp/frontend.log 2>&1 &
 FRONTEND_PID=$!
 
-# 3. Iniciar Whale Scoop Bot (Python)
-echo "🐠 Iniciando Whale Scoop Bot (Paper Trading)..."
+# 4. Iniciar Whale Scoop Bot (Python - Modo Demo)
+echo "🐠 Iniciando Whale Scoop Bot..."
 cd "$WHALE_SCOOP_DIR"
 python3 main.py > /tmp/whale_scoop.log 2>&1 &
 BOT_PID=$!
 
-# 4. Abrir Navegador
-echo "⌛ Esperando a que los servicios estén listos..."
-sleep 10
+# 5. Abrir Navegador
+sleep 5
 open http://localhost:3001
 
 echo "--------------------------------------------------"
 echo "✅ Sistema corriendo"
-echo "   Backend API: http://localhost:8000"
-echo "   Dashboard:  http://localhost:3001"
-echo "   Whale Scoop: Modo papel"
-echo "Presiona Ctrl+C para cerrar."
+echo "   Backend API:  http://localhost:8000"
+echo "   Dashboard:   http://localhost:3001"
+echo "   Whale Scoop: Modo DEMO (cuenta papel)"
+echo ""
+echo "   Logs:"
+echo "   - Backend:  tail -f /tmp/backend.log"
+echo "   - Frontend: tail -f /tmp/frontend.log"
+echo "   - Bot:      tail -f /tmp/whale_scoop.log"
 echo "--------------------------------------------------"
 
-# Limpieza al cerrar
+# Cleanup
 trap "kill $BACKEND_PID $FRONTEND_PID $BOT_PID 2>/dev/null; echo 'Saliendo...'; exit" INT TERM
 wait
