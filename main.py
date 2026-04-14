@@ -8,13 +8,14 @@ Paper trading mode by default.
 
 import asyncio
 import logging
-import signal
 import sys
+import signal as sig
 from datetime import datetime
 from pathlib import Path
 
 from data_ingestion.sec_edgar import SECEdgarClient
 from data_ingestion.whale_alerts import WhaleAlertStream
+from data_ingestion.api_client import WhaleTrackerAPI
 from signal_processor.scoring_engine import ScoringEngine
 from execution_engine.order_manager import OrderManager
 from risk_manager.risk_manager import RiskManager
@@ -46,8 +47,8 @@ async def main():
     logger.info("[DATA] Whale Scoop Bot starting...")
 
     # Setup signal handlers
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+    sig.signal(sig.SIGINT, signal_handler)
+    sig.signal(sig.SIGTERM, signal_handler)
 
     # Check mode
     if config.paper_trading_mode:
@@ -60,6 +61,9 @@ async def main():
     risk_manager = RiskManager(config)
     order_manager = OrderManager(config, risk_manager)
 
+    # Initialize API client for real-time data
+    api_client = WhaleTrackerAPI(config)
+
     # Data ingestion clients
     sec_client = SECEdgarClient(config)
     whale_stream = WhaleAlertStream(config)
@@ -70,10 +74,16 @@ async def main():
         # Main trading loop
         while running:
             try:
-                # Fetch SEC filings
-                logger.debug("[DATA] Checking for new SEC filings...")
-                sec_filings = await sec_client.fetch_recent_filings()
+                # Try to fetch from WhaleTracker API first (real-time data)
+                logger.debug("[DATA] Fetching real-time data from API...")
+                sec_filings = await api_client.get_form4_transactions()
 
+                # Fall back to SEC client if API is not available
+                if not sec_filings:
+                    logger.debug("[DATA] Falling back to SEC client...")
+                    sec_filings = await sec_client.fetch_recent_filings()
+
+                # Process filings
                 for filing in sec_filings:
                     # Process through scoring engine
                     score = scoring_engine.calculate_score(filing)
@@ -94,6 +104,11 @@ async def main():
                                 logger.warning(f"[EXECUTION] Order failed: {order_result.get('reason')}")
                         else:
                             logger.info(f"[RISK] Signal rejected: {risk_check['reason']}")
+
+                # Get signals from API (real-time from whale tracker)
+                api_signals = await api_client.get_signals(min_strength=2)
+                for signal in api_signals:
+                    logger.info(f"[SIGNAL] {signal.get('ticker')}: {signal.get('description', '')[:50]}...")
 
                 # Check whale alerts stream
                 whale_alerts = await whale_stream.get_pending_alerts()
